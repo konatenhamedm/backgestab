@@ -1,0 +1,13 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Si la requête ne pointe pas déjà vers le dossier /public/
+    RewriteCond %{REQUEST_URI} !^/public/
+
+    # Et si ce n'est pas un fichier ou un dossier existant à la racine
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Rediriger toutes les requêtes vers /public/ (hébergement dont la racine web est le dossier du projet)
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>

@@ -1,0 +1,24 @@
+DirectoryIndex index.php
+
+# Le CORS est géré par NelmioCorsBundle (CORS_ALLOW_ORIGIN) : ne pas dupliquer les en-têtes ici.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Transmettre l'en-tête Authorization (JWT) et le code applicatif à PHP
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    SetEnvIf X-APP-SECURITY-CODE "(.*)" HTTP_X_APP_SECURITY_CODE=$1
+    SetEnvIf X-Centre-Id "(.*)" HTTP_X_CENTRE_ID=$1
+    SetEnvIf X-Entreprise-Id "(.*)" HTTP_X_ENTREPRISE_ID=$1
+
+    # Tout ce qui n'est pas un fichier existant passe par le front controller Symfony
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    <IfModule mod_alias.c>
+        RedirectMatch 307 ^/$ /index.php/
+    </IfModule>
+</IfModule>

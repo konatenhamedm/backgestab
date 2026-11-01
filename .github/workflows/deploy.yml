@@ -1,0 +1,108 @@
+name: Deploy Backend
+
+# Déploiement continu : tout push sur la branche "production" met à jour le serveur.
+#
+# Secrets GitHub requis (Settings > Secrets and variables > Actions) :
+#   APP_HOST  APP_USER  APP_PASS        accès SSH au VPS
+# Variable optionnelle (onglet "Variables") :
+#   BACK_DIR   dossier du backend sur le VPS (défaut : /var/www/backgestad.myresy.site/web)
+
+on:
+  push:
+    branches: [ production ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      SSHPASS: ${{ secrets.APP_PASS }}
+      BACK_DIR: ${{ vars.BACK_DIR || '/var/www/backgestad.myresy.site/web' }}
+      SSH_OPTS: -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ConnectionAttempts=5 -o ServerAliveInterval=15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SSHPASS
+        run: sudo apt update && sudo apt install sshpass -y
+
+      - name: Backup Database Before Deploy
+        run: |
+          echo "🔒 Sauvegarde de la base de données avant déploiement..."
+          sshpass -e ssh $SSH_OPTS ${{ secrets.APP_USER }}@${{ secrets.APP_HOST }} "bash -s" -- "$BACK_DIR" <<'REMOTE' || echo "⚠️ Backup SSH échoué, déploiement continue quand même..."
+          TARGET_DIR="$1"
+          BACKUP_DIR=/var/www/backups/db
+          mkdir -p "$BACKUP_DIR"
+          if [ ! -d "$TARGET_DIR" ]; then echo "Premier déploiement : rien à sauvegarder."; exit 0; fi
+          cd "$TARGET_DIR"
+          # Extraire DATABASE_URL depuis .env.local.php, .env.local ou .env
+          if [ -f .env.local.php ]; then
+            DB_URL=$(php -r "echo (include '.env.local.php')['DATABASE_URL'] ?? '';")
+          elif [ -f .env.local ]; then
+            DB_URL=$(grep DATABASE_URL .env.local | tail -1 | cut -d= -f2- | tr -d '"')
+          else
+            DB_URL=$(grep DATABASE_URL .env | tail -1 | cut -d= -f2- | tr -d '"')
+          fi
+          DB_USER=$(echo "$DB_URL" | sed -n 's|.*://\([^:]*\):.*|\1|p')
+          DB_PASS=$(echo "$DB_URL" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p')
+          DB_HOST=$(echo "$DB_URL" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+          DB_PORT=$(echo "$DB_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+          DB_NAME=$(echo "$DB_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+          BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_pre_deploy_$(date +%Y%m%d_%H%M%S).sql.gz"
+          echo "Backup de $DB_NAME vers $BACKUP_FILE..."
+          if PGPASSWORD="$DB_PASS" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_FILE"; then
+            echo "✅ Backup réussi : $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+          else
+            echo "⚠️ Backup échoué, mais le déploiement continue..."
+          fi
+          # Garder uniquement les 10 derniers backups
+          ls -t "$BACKUP_DIR"/*.sql.gz 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null
+          ls -lh "$BACKUP_DIR"/*.sql.gz 2>/dev/null
+          REMOTE
+
+      - name: Deploy and Update Symfony
+        run: |
+          SUCCESS=0
+          for i in {1..3}; do
+            echo "Tentative de déploiement Backend $i/3..."
+            if sshpass -e ssh $SSH_OPTS ${{ secrets.APP_USER }}@${{ secrets.APP_HOST }} "bash -s" -- "$BACK_DIR" <<'REMOTE'
+          set -e
+          TARGET_DIR="$1"
+          cd "$TARGET_DIR"
+          if [ ! -f .env.local ] && [ ! -f .env.local.php ]; then
+            echo "❌ .env.local introuvable dans $TARGET_DIR (APP_ENV, APP_SECRET, DATABASE_URL, JWT_SECRET, APP_SECURITY_CODE, CORS_ALLOW_ORIGIN)."
+            exit 1
+          fi
+          git config --global --add safe.directory '*'
+          git fetch origin production
+          git reset --hard origin/production
+          export APP_ENV=prod APP_DEBUG=0
+          COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --optimize-autoloader
+          (COMPOSER_ALLOW_SUPERUSER=1 composer dump-env prod || true)
+          # Migrations Doctrine (jamais de schema:update en production)
+          php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration --env=prod
+          # Jeu de démonstration (comptes de test, mot de passe Gestad@2026) : idempotent, ignoré s'il existe déjà
+          php bin/console app:seed-demo --env=prod || echo "⚠️ app:seed-demo non exécuté"
+          (php bin/console assets:install public --env=prod || true)
+          php bin/console cache:clear --env=prod
+          mkdir -p var/cache var/log public/uploads
+          chmod -R 777 var/cache var/log public/uploads
+          REMOTE
+            then
+              SUCCESS=1
+              echo "Déploiement Backend réussi !"
+              break
+            else
+              echo "Tentative SSH $i échouée, nouvelle tentative dans 10s..."
+              sleep 10
+            fi
+          done
+          if [ $SUCCESS -ne 1 ]; then
+            echo "ERREUR : Échec du déploiement SSH Backend après 3 tentatives !"
+            exit 1
+          fi
