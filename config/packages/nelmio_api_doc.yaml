@@ -1,0 +1,22 @@
+nelmio_api_doc:
+    documentation:
+        info:
+            title: GESTAD API
+            description: API de gestion des stocks administratifs (fournitures et consommables)
+            version: 1.0.0
+        components:
+            securitySchemes:
+                Bearer:
+                    type: http
+                    scheme: bearer
+                    bearerFormat: JWT
+                AppSecurityCode:
+                    type: apiKey
+                    in: header
+                    name: X-APP-SECURITY-CODE
+        security:
+            - Bearer: []
+            - AppSecurityCode: []
+    areas:
+        path_patterns:
+            - ^/api(?!/doc$)

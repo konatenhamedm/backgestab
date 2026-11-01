@@ -1,0 +1,30 @@
+parameters:
+    jwt.secret: '%env(JWT_SECRET)%'
+    jwt.ttl: '%env(int:JWT_TTL)%'
+    app.security_code: '%env(APP_SECURITY_CODE)%'
+    upload_dir: '%kernel.project_dir%/public/uploads'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/*/Domain/Entity/'
+            - '../src/Kernel.php'
+
+    # --- Repository bindings ---
+    App\Security\Domain\Repository\UtilisateurRepositoryInterface:
+        class: App\Security\Infrastructure\Persistence\UtilisateurRepository
+
+    App\Stock\Domain\Repository\ArticleRepositoryInterface:
+        class: App\Stock\Infrastructure\Persistence\ArticleRepository
+
+    App\Achats\Domain\Repository\FactureFournisseurRepositoryInterface:
+        class: App\Achats\Infrastructure\Persistence\FactureFournisseurRepository
+
+    App\Demandes\Domain\Repository\DemandeMaterielRepositoryInterface:
+        class: App\Demandes\Infrastructure\Persistence\DemandeMaterielRepository

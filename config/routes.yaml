@@ -1,0 +1,29 @@
+# Les routes sont déclarées par attributs #[Route] dans chaque module (src/<Module>/UI/Controller).
+
+controllers_security:
+    resource: ../src/Security/UI/Controller/
+    type: attribute
+
+controllers_shared:
+    resource: ../src/Shared/UI/Controller/
+    type: attribute
+
+controllers_organisation:
+    resource: ../src/Organisation/UI/Controller/
+    type: attribute
+
+controllers_stock:
+    resource: ../src/Stock/UI/Controller/
+    type: attribute
+
+controllers_achats:
+    resource: ../src/Achats/UI/Controller/
+    type: attribute
+
+controllers_demandes:
+    resource: ../src/Demandes/UI/Controller/
+    type: attribute
+
+controllers_reporting:
+    resource: ../src/Reporting/UI/Controller/
+    type: attribute
